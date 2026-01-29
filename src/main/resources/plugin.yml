@@ -1,6 +1,6 @@
 name: SeasonsCore
 main: Kinkin.aeternum.AeternumSeasonsPlugin
-version: ${1.8}
+version: ${1.9}
 api-version: '1.21'
 author: Kinkin
 
