@@ -91,6 +91,9 @@ public final class WinterWorldPainter implements Listener, Runnable {
     private int     autumnRevertBudgetPerTick;
     private boolean revertLeavesOnNonAutumn;
 
+    private Set<String> disabledFxWorlds = new HashSet<>();
+
+
     public WinterWorldPainter(AeternumSeasonsPlugin plugin, SeasonService seasons) {
         this.plugin = plugin;
         this.seasons = seasons;
@@ -154,6 +157,16 @@ public final class WinterWorldPainter implements Listener, Runnable {
         this.autumnRevertBudgetPerTick = Math.min(this.autumnRevertBudgetPerTick, 80);
 
         schedule();
+
+        List<String> list = plugin.getConfig().getStringList("worlds.disabled_season_fx");
+        Set<String> s = new HashSet<>();
+        for (String w : list) {
+            if (w == null) continue;
+            String name = w.trim();
+            if (!name.isEmpty()) s.add(name.toLowerCase(Locale.ROOT));
+        }
+        this.disabledFxWorlds = s;
+
     }
 
     private static double clamp(double v, double lo, double hi) {
@@ -165,11 +178,11 @@ public final class WinterWorldPainter implements Listener, Runnable {
         CalendarState st = seasons.getStateCopy();
 
         // Salimos de WINTER --> arrancar derretido global progresivo
-        if (st.season != Season.WINTER && meltWhenNotWinter) {
-            plugin.getLogger().info("[AeternumSeasons] Season changed to " + st.season
-                    + " - starting global progressive melt of snow/ice.");
-            prepareStartupMelt();   // <-- IMPORTANTE: reencola todos los chunks cargados
-        }
+//        if (st.season != Season.WINTER && meltWhenNotWinter) {
+//            plugin.getLogger().info("[AeternumSeasons] Season changed to " + st.season
+//                    + " - starting global progressive melt of snow/ice.");
+//            prepareStartupMelt();   // <-- IMPORTANTE: reencola todos los chunks cargados
+//        }
     }
 
     /**
@@ -318,13 +331,13 @@ public final class WinterWorldPainter implements Listener, Runnable {
                         Material t = b.getType();
 
                         if (t == Material.SNOW || t == Material.SNOW_BLOCK) {
-                            if (!WinterWorldGuardHelper.canModify(b)) {
+                            if (!WinterWorldGuardHelper.canIceMelt(b)) {
                                 continue;
                             }
                             b.setType(Material.AIR, false);
                             clearSnowyBelow(b);
                         } else if (meltAlsoIce && (t == Material.ICE || t == Material.FROSTED_ICE)) {
-                            if (!WinterWorldGuardHelper.canModify(b)) {
+                            if (!WinterWorldGuardHelper.canIceMelt(b)) {
                                 continue;
                             }
                             b.setType(Material.WATER, false);
@@ -335,7 +348,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
                                 Block above = b.getRelative(BlockFace.UP);
                                 Material aboveType = above.getType();
                                 if (aboveType != Material.SNOW && aboveType != Material.SNOW_BLOCK) {
-                                    if (!WinterWorldGuardHelper.canModify(b)) {
+                                    if (!WinterWorldGuardHelper.canIceMelt(b)) {
                                         continue;
                                     }
                                     snowData.setSnowy(false);
@@ -348,10 +361,10 @@ public final class WinterWorldPainter implements Listener, Runnable {
             }
         }
 
-        if (startupQueue.isEmpty()) {
-            startupRunning = false;
-            plugin.getLogger().info("[AeternumSeasons] StartupMelt finished.");
-        }
+//        if (startupQueue.isEmpty()) {
+//            startupRunning = false;
+//            plugin.getLogger().info("[AeternumSeasons] StartupMelt finished.");
+//        }
     }
 
 
@@ -420,16 +433,24 @@ public final class WinterWorldPainter implements Listener, Runnable {
 
             World w = p.getWorld();
             if (w.getEnvironment() != World.Environment.NORMAL) continue;
+            if (isFxDisabled(w)) continue;
+
+            // --- CAMBIO AQUÍ: Verificar si está lloviendo/nevando en el mundo ---
+            // Si el mundo no tiene tormenta activa, no procesamos nieve para este jugador.
+            if (!w.hasStorm()) continue;
 
             boolean anyCold = isColdAround(w, p.getLocation(), Math.min(24, radius));
-            boolean storming = w.hasStorm() && anyCold;
+
+            // Si quieres ser aún más estricto y que solo caiga en biomas fríos:
+            // if (!anyCold) continue;
 
             int    thisBudget    = remainingGlobal;
             int    thisRadius    = radius;
-            double thisPlace     = placeChance;
-            double thisAddLayer  = addLayerChance;
+            double thisPlace      = placeChance;
+            double thisAddLayer   = addLayerChance;
 
-            if (storming && stormBoostEnabled) {
+            // Aplicar multiplicadores de tormenta (ahora que sabemos que SI hay tormenta)
+            if (stormBoostEnabled) {
                 thisBudget    = (int) Math.ceil(thisBudget * stormBudgetMultiplier);
                 thisRadius    = thisRadius + stormRadiusBonus;
                 thisPlace     = clamp(thisPlace * stormPlaceMultiplier, 0.0, 1.0);
@@ -447,7 +468,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
                 int y = w.getHighestBlockYAt(x, z, HeightMap.MOTION_BLOCKING_NO_LEAVES);
                 Block highest = w.getBlockAt(x, y, z);
 
-                // ====== ✅ NUEVO: congelar agua ANTES de checar "air" ======
+                // Congelar agua
                 if (freezeWater && highest.getType() == Material.WATER) {
                     if (highest.getBlockData() instanceof Levelled lvl && lvl.getLevel() == 0) {
                         if (!WinterWorldGuardHelper.canModify(highest)) continue;
@@ -455,53 +476,30 @@ public final class WinterWorldPainter implements Listener, Runnable {
                         highest.setType(Material.ICE, false);
                         markIce(highest);
 
-                        // opcional: nieve arriba del hielo recién creado
                         Block aboveIce = highest.getRelative(BlockFace.UP);
                         if (aboveIce.getType().isAir()) {
-                            boolean willVanillaSnow = storming && isColdAt(w, x, z);
-                            double pc = willVanillaSnow ? Math.max(0.75, thisPlace) : thisPlace;
-
-                            if (r.nextDouble() < pc && WinterWorldGuardHelper.canModify(aboveIce)) {
+                            if (r.nextDouble() < thisPlace && WinterWorldGuardHelper.canSnowFall(aboveIce)) {
                                 aboveIce.setType(Material.SNOW, false);
                                 markSnow(aboveIce);
                             }
                         }
                     }
-                    continue; // ya manejamos esta columna
+                    continue;
                 }
-                // =========================================================
 
                 Block ground = highest;
                 Block air = ground.getRelative(BlockFace.UP);
 
                 if (!air.getType().isAir()) continue;
-
-                // permitir SNOW (capas) aunque no sea sólido
-                // Material gType = ground.getType();
-                // if (!gType.isSolid() && gType != Material.SNOW) continue;
-
-                // *** CORRECCIÓN: Usar la nueva función para bloquear bloques problemáticos ***
-                if (shouldBlockSnow(ground)) {
-                    continue;
-                }
-                // *************************************************************************
-
-                // WorldGuard: no pintar / no derretir en regiones protegidas
-                if (!WinterWorldGuardHelper.canModify(ground) || !WinterWorldGuardHelper.canModify(air)) {
-                    continue;
-                }
+                if (shouldBlockSnow(ground)) continue;
+                if (!WinterWorldGuardHelper.canModify(ground) || !WinterWorldGuardHelper.canModify(air)) continue;
 
                 remainingGlobal--;
 
-                boolean willVanillaSnow = storming && isColdAt(w, x, z);
-
-                double pc = willVanillaSnow ? Math.max(0.75, thisPlace) : thisPlace;
-                double lc = willVanillaSnow ? Math.max(0.75, thisAddLayer) : thisAddLayer;
-
-                if (r.nextDouble() < pc) {
+                if (r.nextDouble() < thisPlace) {
                     if (ground.getType() == Material.SNOW) {
                         Snow data = (Snow) ground.getBlockData();
-                        if (r.nextDouble() < lc && data.getLayers() < data.getMaximumLayers()) {
+                        if (r.nextDouble() < thisAddLayer && data.getLayers() < data.getMaximumLayers()) {
                             data.setLayers(data.getLayers() + 1);
                             ground.setBlockData(data, false);
                             markSnow(ground);
@@ -531,10 +529,10 @@ public final class WinterWorldPainter implements Listener, Runnable {
         }
 
         startupRunning = !startupQueue.isEmpty();
-        if (startupRunning) {
-            plugin.getLogger().info("[AeternumSeasons] StartupMelt queued "
-                    + startupQueue.size() + " loaded chunks.");
-        }
+//        if (startupRunning) {
+//            plugin.getLogger().info("[AeternumSeasons] StartupMelt queued "
+//                    + startupQueue.size() + " loaded chunks.");
+//        }
     }
 
 
@@ -553,6 +551,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
             if (remaining <= 0) break;
             World w = p.getWorld();
             if (w.getEnvironment() != World.Environment.NORMAL) continue;
+            if (isFxDisabled(w)) continue;
 
             int baseX = p.getLocation().getBlockX();
             int baseZ = p.getLocation().getBlockZ();
@@ -685,6 +684,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
 
             World w = p.getWorld();
             if (w.getEnvironment() != World.Environment.NORMAL) continue;
+            if (isFxDisabled(w)) continue;
 
             int px = p.getLocation().getBlockX();
             int pz = p.getLocation().getBlockZ();
@@ -727,7 +727,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
                     }
 
                     if (type == Material.SNOW || type == Material.SNOW_BLOCK) {
-                        if (!WinterWorldGuardHelper.canModify(b)) {
+                        if (!WinterWorldGuardHelper.canSnowMelt(b)) {
                             continue;
                         }
                         b.setType(Material.AIR, false);
@@ -736,7 +736,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
                         break;
                     } else if (meltAlsoIce &&
                             (type == Material.ICE || type == Material.FROSTED_ICE)) {
-                        if (!WinterWorldGuardHelper.canModify(b)) {
+                        if (!WinterWorldGuardHelper.canSnowMelt(b)) {
                             continue;
                         }
                         b.setType(Material.WATER, false);
@@ -748,7 +748,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
                             Block above = b.getRelative(0, 1, 0);
                             Material aboveType = above.getType();
                             if (aboveType != Material.SNOW && aboveType != Material.SNOW_BLOCK) {
-                                if (!WinterWorldGuardHelper.canModify(b)) {
+                                if (!WinterWorldGuardHelper.canIceMelt(b)) {
                                     continue;
                                 }
                                 snowData.setSnowy(false);
@@ -816,6 +816,9 @@ public final class WinterWorldPainter implements Listener, Runnable {
         }
     }
 
+    private boolean isFxDisabled(World w) {
+        return w != null && disabledFxWorlds.contains(w.getName().toLowerCase(Locale.ROOT));
+    }
 
     private boolean isColdAround(World w, Location center, int rad) {
         ThreadLocalRandom r = ThreadLocalRandom.current();
@@ -874,10 +877,12 @@ public final class WinterWorldPainter implements Listener, Runnable {
             int z = Integer.parseInt(s[3]);
             Block b = w.getBlockAt(x, y, z);
             if (b.getType() == Material.SNOW || b.getType() == Material.SNOW_BLOCK) {
-                if (WinterWorldGuardHelper.canModify(b)) {
+                if (WinterWorldGuardHelper.canIceMelt(b)) {
                     b.setType(Material.AIR, false);
+                    clearSnowyBelow(b);
                 }
             }
+            if (!WinterWorldGuardHelper.canSnowMelt(b)) continue;
         }
         paintedSnow.clear();
 
@@ -893,7 +898,7 @@ public final class WinterWorldPainter implements Listener, Runnable {
             int z = Integer.parseInt(s[3]);
             Block b = w.getBlockAt(x, y, z);
             if (b.getType() == Material.ICE || b.getType() == Material.FROSTED_ICE) {
-                if (WinterWorldGuardHelper.canModify(b)) {
+                if (WinterWorldGuardHelper.canIceMelt(b)) {
                     b.setType(Material.WATER, false);
                 }
             }
