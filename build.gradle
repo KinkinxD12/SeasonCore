@@ -1,7 +1,7 @@
 plugins { id 'java' }
 
 group = 'Kinkin.aeternum'
-version = '1.8'
+version = '1.9'
 
 java {
     toolchain { languageVersion = JavaLanguageVersion.of(21) }
