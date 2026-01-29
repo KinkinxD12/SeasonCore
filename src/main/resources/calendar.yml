@@ -1,7 +1,9 @@
 calendar:
-  days_per_season: 28                # Días por estación | Days per season
+  days_per_season: 28                # Días por estación / Days per season
   advance:
-    follow_overworld_time: true      # Seguir reloj del overworld | Follow overworld clock
-    on_sleep: true                   # Avanzar al dormir (si el anterior es false) | Advance on sleep (if previous is false)
-    real_time_minutes_per_day: 0     # 0 = desactivado; >0 = modo tiempo real | 0 = disabled; >0 = real-time mode
-    require_players_on_server: false # false = avanza sin jugadores | false = advances without players
+    follow_overworld_time: true      # Sigue reloj Overworld / Follow Overworld time
+    on_sleep: true                   # Avanzar al dormir / Advance on sleep
+    real_time_minutes_per_day: 0     # Minutos por día (0 = off) / Real time mins per day
+    require_players_on_server: true  # Requiere jugadores / Require players online
+    time_anchor_world: "world"       # Mundo de referencia / Reference world
+    max_catchup_days: 2              # Días máx. de recuperación / Max catch-up days
