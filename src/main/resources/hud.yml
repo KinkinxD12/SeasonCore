@@ -1,9 +1,11 @@
 bossbar:
-  enabled: true          # Barra de jefe activada | Bossbar enabled
-  color_by_season: true  # Color según la estación | Color by season
-  update_ticks: 40       # Ticks de actualización | Update ticks
-  default_mode: FIXED    # Modo por defecto | Default mode
-  variable_players: []
-  off_players: []        # Jugadores que la tienen apagada | Players with it off
+  enabled: true             # Habilita BossBar / Enable BossBar
+  color_by_season: true     # Color según estación / Color by season
+  update_ticks: 40          # Ticks de actualización / Update ticks
+  default_mode: FIXED       # Modo por defecto / Default mode
+  variable_players: []      # Jugadores variables / Variable players
+  off_players: []           # ✅ Nuevo: Jugadores en OFF / Players OFF
+
 actionbar:
-  enabled: false         # Barra de acción desactivada | Actionbar disabled
+  enabled: false            # Habilita ActionBar / Enable ActionBar
+  clear_on_hide: false      # Limpiar al ocultar / Clear on hide
