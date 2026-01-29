@@ -1,89 +1,92 @@
 seasonal_crops:
-  enabled: true
-  rain_growth_bonus: 1.0   # mínimo acaba siendo +1 | minimum ends up being +1
+  enabled: true                     # Cultivos estacionales / Seasonal crops
+  rain_growth_bonus: 1.0            # Bono por lluvia / Rain growth bonus
 
-  underground_slow_multiplier: 0.8  # Menos penalización bajo tierra | Less penalty for being underground
-  low_light_multiplier: 0.7         # No penalizar si la luz es baja | Do not penalize if light is low
-  required_light: 4                 # No requiere mucha luz | Does not require much light
+  off_season_growth_chance: 0.1     # 0.1 = 10% de probabilidad de crecer si está fuera de temporada 0.0 = no crece
+  # 0.1 =  10% chance of growing if it is out of season 0.0 = no growth
+
+  underground_slow_multiplier: 0.8  # Mult. bajo tierra / Underground multiplier
+  low_light_multiplier: 0.7         # Mult. luz baja / Low light multiplier
+  required_light: 4                 # Luz requerida / Required light
 
   greenhouse:
-    enabled: true                  # Invernaderos | Greenhouses
-    max_roof_height: 4
-    radius: 7
-    min_glass_count: 16
-    require_core: false
-    core_block: GLASS
-    winter_bonus: 1.0
+    enabled: true                   # Invernaderos / Greenhouses
+    max_roof_height: 4              # Altura máx. techo / Max roof height
+    radius: 7                       # Radio invernadero / Greenhouse radius
+    min_glass_count: 16             # Cristal mínimo / Min glass count
+    require_core: false             # Requiere núcleo / Require core
+    core_block: GLASS               # Bloque del núcleo / Core block type
+    winter_bonus: 1.0               # Bono de invierno / Winter bonus
 
-    block_types:
+    block_types:                    # Tipos de cristal / Glass block types
       - GLASS
       - WHITE_STAINED_GLASS
       - LIGHT_BLUE_STAINED_GLASS
 
     debug:
-      enabled: true
-      stick: STICK
+      enabled: true                 # Modo depuración / Debug mode
+      stick: STICK                  # Item de debug / Debug item
 
-  crops:                            # Estaciones permitidas por cultivo | Allowed seasons per crop
+  crops:
     WHEAT:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Trigo / Wheat
     CARROTS:
-      allowed_seasons: [SPRING, SUMMER, AUTUMN]
+      allowed_seasons: [SPRING, SUMMER, AUTUMN]    # Zanahorias / Carrots
     POTATOES:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Patatas / Potatoes
     BEETROOTS:
-      allowed_seasons: [SPRING, AUTUMN]
+      allowed_seasons: [SPRING, AUTUMN]            # Remolachas / Beetroots
     TORCHFLOWER_CROP:
-      allowed_seasons: [SPRING]
+      allowed_seasons: [SPRING]                    # Flor antorcha / Torchflower
     PITCHER_CROP:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Planta jarra / Pitcher plant
     MELON_STEM:
-      allowed_seasons: [SUMMER]
+      allowed_seasons: [SUMMER]                    # Sandía / Melon
     PUMPKIN_STEM:
-      allowed_seasons: [AUTUMN]
+      allowed_seasons: [AUTUMN]                    # Calabaza / Pumpkin
     SUGAR_CANE:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Caña azúcar / Sugar cane
     CACTUS:
-      allowed_seasons: [SUMMER]
+      allowed_seasons: [SUMMER]                    # Cactus / Cactus
     BAMBOO:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Bambú / Bamboo
     BAMBOO_SAPLING:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Brote bambú / Bamboo sapling
     SWEET_BERRY_BUSH:
-      allowed_seasons: [SPRING, AUTUMN]
+      allowed_seasons: [SPRING, AUTUMN]            # Bayas dulces / Sweet berries
     CAVE_VINES:
-      allowed_seasons: [SUMMER, AUTUMN]
+      allowed_seasons: [SUMMER, AUTUMN]            # Enredaderas cueva / Cave vines
     CAVE_VINES_PLANT:
-      allowed_seasons: [SUMMER, AUTUMN]
+      allowed_seasons: [SUMMER, AUTUMN]            # Planta cueva / Cave vines plant
     KELP:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Algas / Kelp
     KELP_PLANT:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Planta algas / Kelp plant
     SEA_PICKLE:
-      allowed_seasons: [SUMMER]
+      allowed_seasons: [SUMMER]                    # Pepino de mar / Sea pickle
     NETHER_WART:
-      allowed_seasons: [AUTUMN, WINTER]
+      allowed_seasons: [AUTUMN, WINTER]            # Verruga Nether / Nether wart
     CHORUS_FLOWER:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Flor Chorus / Chorus flower
     COCOA:
-      allowed_seasons: [SUMMER]
+      allowed_seasons: [SUMMER]                    # Cacao / Cocoa
     BROWN_MUSHROOM:
-      allowed_seasons: [SUMMER, WINTER]
+      allowed_seasons: [SUMMER, WINTER]            # Champiñón marrón / Brown mushroom
     RED_MUSHROOM:
-      allowed_seasons: [SUMMER, WINTER]
+      allowed_seasons: [SUMMER, WINTER]            # Champiñón rojo / Red mushroom
     OAK_SAPLING:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Brote roble / Oak sapling
     BIRCH_SAPLING:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Brote abedul / Birch sapling
     SPRUCE_SAPLING:
-      allowed_seasons: [AUTUMN, WINTER]
+      allowed_seasons: [AUTUMN, WINTER]            # Brote abeto / Spruce sapling
     JUNGLE_SAPLING:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Brote jungla / Jungle sapling
     ACACIA_SAPLING:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Brote acacia / Acacia sapling
     DARK_OAK_SAPLING:
-      allowed_seasons: [SPRING, AUTUMN]
+      allowed_seasons: [SPRING, AUTUMN]            # Brote roble oscuro / Dark oak
     MANGROVE_PROPAGULE:
-      allowed_seasons: [SPRING, SUMMER]
+      allowed_seasons: [SPRING, SUMMER]            # Propágulo mangle / Mangrove
     CHERRY_SAPLING:
-      allowed_seasons: [SPRING]
+      allowed_seasons: [SPRING]                    # Brote cerezo / Cherry sapling
