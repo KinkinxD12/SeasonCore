@@ -42,13 +42,19 @@ public final class HudService implements Listener, Runnable {
 
     private BukkitTask task;
 
-    // Antes era "enabled" (bossbar). Ahora separo para poder activar ActionBar sin romper nada.
     private final boolean bossbarEnabled;
     private final boolean actionbarEnabled;
+
+    // NUEVO: si quieres limpiar tu actionbar al ocultar (por defecto NO, para no pisar otros plugins)
+    private final boolean actionbarClearOnHide;
 
     private final boolean colorBySeason;
     private final long updateTicks;
     private final HudMode defaultMode;
+
+    // NUEVO: cache para NO spamear actionbar y reducir conflictos
+    private final Map<UUID, String> lastActionbarText = new HashMap<>();
+    private final Set<UUID> actionbarShown = new HashSet<>();
 
     public HudService(AeternumSeasonsPlugin plugin, SeasonService seasons) {
         this.plugin = plugin;
@@ -56,6 +62,9 @@ public final class HudService implements Listener, Runnable {
 
         this.bossbarEnabled   = plugin.cfg.hud.getBoolean("bossbar.enabled", true);
         this.actionbarEnabled = plugin.cfg.hud.getBoolean("actionbar.enabled", false);
+
+        // NUEVO (default false): NO borrar actionbar al ocultar
+        this.actionbarClearOnHide = plugin.cfg.hud.getBoolean("actionbar.clear_on_hide", false);
 
         this.colorBySeason = plugin.cfg.hud.getBoolean("bossbar.color_by_season", true);
         this.updateTicks   = plugin.cfg.hud.getLong("bossbar.update_ticks", 40L);
@@ -69,19 +78,16 @@ public final class HudService implements Listener, Runnable {
         }
         this.defaultMode = dm;
 
-        // cargar variable_players
         for (String s : plugin.cfg.hud.getStringList("bossbar.variable_players")) {
             try { variablePlayers.add(UUID.fromString(s)); } catch (IllegalArgumentException ignored) {}
         }
 
-        // cargar off_players
         for (String s : plugin.cfg.hud.getStringList("bossbar.off_players")) {
             try { offPlayers.add(UUID.fromString(s)); } catch (IllegalArgumentException ignored) {}
         }
     }
 
     public void register() {
-        // Si no hay bossbar ni actionbar, no hacemos nada.
         if (!bossbarEnabled && !actionbarEnabled) return;
 
         Bukkit.getPluginManager().registerEvents(this, plugin);
@@ -104,6 +110,9 @@ public final class HudService implements Listener, Runnable {
         modes.clear();
         variablePlayers.clear();
         offPlayers.clear();
+
+        lastActionbarText.clear();
+        actionbarShown.clear();
     }
 
     // ───────────────────── Eventos de jugador ─────────────────────
@@ -130,13 +139,16 @@ public final class HudService implements Listener, Runnable {
         BossBar bar = bars.remove(id);
         if (bar != null) bar.removeAll();
 
-        // limpiar actionbar al salir (opcional pero queda limpio)
-        if (actionbarEnabled) {
+        // IMPORTANTE: NO limpiar actionbar aquí (eso pisa otros plugins).
+        // Solo limpiamos si el admin lo pidió explícitamente.
+        if (actionbarEnabled && actionbarClearOnHide) {
             e.getPlayer().spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
         }
 
+        lastActionbarText.remove(id);
+        actionbarShown.remove(id);
+
         modes.remove(id);
-        // variablePlayers/offPlayers NO se limpian: son persistentes
     }
 
     private void ensureBar(Player p) {
@@ -153,32 +165,38 @@ public final class HudService implements Listener, Runnable {
         }
     }
 
-    /** Cambia modo del jugador y lo guarda persistente. */
     public void setPlayerMode(Player p, HudMode mode) {
         UUID id = p.getUniqueId();
         modes.put(id, mode);
 
-        // OFF tiene prioridad: si está OFF, no debe estar marcado variable
         if (mode == HudMode.OFF) {
             offPlayers.add(id);
             variablePlayers.remove(id);
         } else if (mode == HudMode.VARIABLE) {
             variablePlayers.add(id);
             offPlayers.remove(id);
-        } else { // FIXED
+        } else {
             variablePlayers.remove(id);
             offPlayers.remove(id);
         }
 
         if (bossbarEnabled) {
-            ensureBar(p); // si volvió de OFF, lo re-añade
+            ensureBar(p);
+        }
+
+        // Si apagas HUD, NO borres actionbar a menos que esté activado clear_on_hide
+        if (actionbarEnabled && mode == HudMode.OFF) {
+            actionbarShown.remove(id);
+            lastActionbarText.remove(id);
+            if (actionbarClearOnHide) {
+                p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
+            }
         }
 
         savePlayers("bossbar.variable_players", variablePlayers);
         savePlayers("bossbar.off_players", offPlayers);
     }
 
-    /** Modo del jugador, leyendo persistencia. */
     public HudMode getPlayerMode(Player p) {
         UUID id = p.getUniqueId();
 
@@ -201,7 +219,7 @@ public final class HudService implements Listener, Runnable {
         List<String> out = new ArrayList<>();
         for (UUID u : set) out.add(u.toString());
         plugin.cfg.hud.set(path, out);
-        plugin.saveConfig(); // si tienes saveHudConfig(), cámbialo aquí
+        plugin.saveConfig();
     }
 
     @Override
@@ -214,42 +232,41 @@ public final class HudService implements Listener, Runnable {
 
         for (Player p : Bukkit.getOnlinePlayers()) {
 
-            // 1. DECLARACIÓN y VERIFICACIÓN (MANTENER ESTE BLOQUE)
-            World pw = p.getWorld(); // Mantenemos esta declaración
+            World pw = p.getWorld();
+            UUID pid = p.getUniqueId();
+
             if (plugin.isWorldDisabled(pw)) {
-                // Si el plugin está deshabilitado en este mundo, ocultamos y removemos la Bossbar.
-                BossBar bar = bars.remove(p.getUniqueId());
+                BossBar bar = bars.remove(pid);
                 if (bar != null) bar.removeAll();
 
-                // limpiar actionbar
-                if (actionbarEnabled) {
-                    p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
-                }
+                // NO limpiar actionbar (no pisar otros plugins)
+                actionbarShown.remove(pid);
+                lastActionbarText.remove(pid);
 
                 HudMode currentMode = getPlayerMode(p);
                 if (currentMode != HudMode.OFF) {
-                    modes.remove(p.getUniqueId());
+                    modes.remove(pid);
                 }
-
-                continue; // Salta al siguiente jugador
+                continue;
             }
 
             BossBar bar = null;
             if (bossbarEnabled) {
                 ensureBar(p);
-                bar = bars.get(p.getUniqueId());
+                bar = bars.get(pid);
                 if (bar == null) continue;
             }
 
             HudMode mode = getPlayerMode(p);
+
             if (mode == HudMode.OFF) {
                 if (bossbarEnabled) {
                     bar.setVisible(false);
                     bar.removePlayer(p);
                 }
-                if (actionbarEnabled) {
-                    p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
-                }
+                // NO mandar "" al actionbar
+                actionbarShown.remove(pid);
+                lastActionbarText.remove(pid);
                 continue;
             } else {
                 if (bossbarEnabled) {
@@ -257,8 +274,6 @@ public final class HudService implements Listener, Runnable {
                 }
             }
 
-            // 2. LÓGICA DE DIMENSIONES (¡QUITAR LA REDECLARACIÓN AQUÍ!)
-            // [Línea anterior era 'World pw = p.getWorld();' - DEBE SER ELIMINADA]
             boolean inFrostOverworld = pw != null && pw.getName().equalsIgnoreCase("aeternum_frost");
             boolean inHeatWorld      = pw != null && pw.getName().equalsIgnoreCase("aeternum_heat");
 
@@ -273,7 +288,6 @@ public final class HudService implements Listener, Runnable {
                 progress = 1.0;
 
             } else if (inFrostOverworld) {
-                // Día real del calendario, sin forzar al rango 1..days_per_season
                 int frostDay = s.day;
 
                 String seasonName = plugin.lang.tr(p, "season.WINTER");
@@ -287,7 +301,6 @@ public final class HudService implements Listener, Runnable {
                         "realm", realmName
                 ));
 
-                // La barra se llena al llegar al final de la estación y luego se queda llena.
                 progress = Math.max(0.0, Math.min(1.0,
                         (double) frostDay / (double) daysPerSeason
                 ));
@@ -307,17 +320,40 @@ public final class HudService implements Listener, Runnable {
                 ));
             }
 
-            // ───────────── ActionBar (mismo texto que la bossbar) ─────────────
+// ───────────── ActionBar (NO INVASIVO, FIXED SIEMPRE) ─────────────
             if (actionbarEnabled) {
-                boolean showNow = (mode == HudMode.FIXED) || isHudTime(time);
-                if (showNow) {
+
+                if (mode == HudMode.FIXED) {
+                    // FIXED = siempre enviar (si no, otros plugins te lo pisan y desaparece)
                     p.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(title));
+                    lastActionbarText.put(pid, title);
+                    actionbarShown.add(pid);
                 } else {
-                    p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
+                    // VARIABLE = solo en “momentos”
+                    boolean showNow = isHudTime(time);
+
+                    if (showNow) {
+                        String last = lastActionbarText.get(pid);
+                        boolean wasShown = actionbarShown.contains(pid);
+
+                        if (!wasShown || !Objects.equals(last, title)) {
+                            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(title));
+                            lastActionbarText.put(pid, title);
+                            actionbarShown.add(pid);
+                        }
+                    } else {
+                        // NO mandar "" => no pisar otros plugins
+                        actionbarShown.remove(pid);
+                        lastActionbarText.remove(pid);
+
+                        if (actionbarClearOnHide) {
+                            p.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
+                        }
+                    }
                 }
             }
 
-            // ───────────── BossBar original (sin cambiar tu lógica) ─────────────
+            // ───────────── BossBar original ─────────────
             if (bossbarEnabled) {
                 bar.setTitle(title);
                 bar.setProgress(progress);
@@ -333,7 +369,7 @@ public final class HudService implements Listener, Runnable {
 
                 if (mode == HudMode.FIXED) {
                     bar.setVisible(true);
-                } else { // VARIABLE
+                } else {
                     bar.setVisible(isHudTime(time));
                 }
             }
@@ -351,9 +387,9 @@ public final class HudService implements Listener, Runnable {
 
     private boolean isHudTime(long time) {
         long t = time % 24000L;
-        if (t >= 0 && t < 2000) return true;         // mañana
-        if (t >= 6000 && t < 8000) return true;      // mediodía
-        if (t >= 13000 && t < 15000) return true;    // noche
+        if (t >= 0 && t < 2000) return true;
+        if (t >= 6000 && t < 8000) return true;
+        if (t >= 13000 && t < 15000) return true;
         return false;
     }
 }
