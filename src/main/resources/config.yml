@@ -5,3 +5,8 @@ visual_atmosphere:
 worlds:
   disabled_season_fx:                # Mundos sin efectos / Worlds with no FX
     - world_the_end
+
+season_guide:
+  give_on_first_join: true           # si está false, NO se entrega el libro/guía al unirse
+                                     # if false, the book/guide is NOT delivered upon joining
+    
