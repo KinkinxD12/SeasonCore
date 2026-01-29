@@ -21,10 +21,6 @@ import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.scheduler.BukkitTask;
-import org.bukkit.configuration.file.YamlConfiguration;
-
-import java.io.File;
-import java.io.IOException;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -48,6 +44,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
     private final AeternumSeasonsPlugin plugin;
     private final SeasonService seasons;
 
+
     private boolean enabled;
     private int tickPeriod;
     private int innerRadiusChunksCfg;
@@ -55,18 +52,8 @@ public final class SeasonalFloraController implements Listener, Runnable {
     private int budgetPerTick;
     private int maxChunksPerTick;
     private boolean protectPlayerPlaced;
-
-    // config
-    private boolean allowInView;
     private int surfaceScanDepth;
-
-    // persistence
-    private boolean persistPlacements;
-    private int persistAutosaveMinutes;
-    private File placementsFile;
-    private boolean placementsLoaded;
-    private volatile boolean placementsDirty;
-    private long nextAutosaveAtMs;
+    private boolean allowInView;
 
     private BukkitTask task;
 
@@ -93,9 +80,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
     public SeasonalFloraController(AeternumSeasonsPlugin plugin, SeasonService seasons) {
         this.plugin = plugin;
         this.seasons = seasons;
-        this.placementsFile = new File(plugin.getDataFolder(), "seasonal_flora_placements.yml");
         reloadFromConfig();
-        loadPlacementsIfNeeded();
     }
 
     public void register() {
@@ -107,11 +92,6 @@ public final class SeasonalFloraController implements Listener, Runnable {
 
     public void unregister() {
         if (task != null) task.cancel();
-        task = null;
-
-        // Guarda placements antes de limpiar (para no perder protección / purga tras reinicios)
-        savePlacementsIfNeeded(true);
-
         HandlerList.unregisterAll(this);
         rules.clear();
         rulesByMaterial.clear();
@@ -127,23 +107,8 @@ public final class SeasonalFloraController implements Listener, Runnable {
         this.budgetPerTick = Math.max(1, plugin.cfg.climate.getInt("seasonal_flora.budget_blocks_per_tick", 120));
         this.maxChunksPerTick = Math.max(1, plugin.cfg.climate.getInt("seasonal_flora.max_chunks_per_tick", 8));
         this.protectPlayerPlaced = plugin.cfg.climate.getBoolean("seasonal_flora.protect_player_placed", true);
-
         this.allowInView = plugin.cfg.climate.getBoolean("seasonal_flora.allow_in_view", true);
         this.surfaceScanDepth = Math.max(1, plugin.cfg.climate.getInt("seasonal_flora.surface_scan_depth", 8));
-
-        this.persistPlacements = plugin.cfg.climate.getBoolean("seasonal_flora.persist_placements", true);
-        this.persistAutosaveMinutes = Math.max(1, plugin.cfg.climate.getInt("seasonal_flora.persist_autosave_minutes", 5));
-        if (!persistPlacements) {
-            // si lo apagas, por seguridad limpiamos el tracking para no crecer RAM sin necesidad
-            playerPlaced.clear();
-            pluginPlaced.clear();
-            placementsLoaded = false;
-            placementsDirty = false;
-        } else {
-            loadPlacementsIfNeeded();
-            long now = System.currentTimeMillis();
-            nextAutosaveAtMs = now + (persistAutosaveMinutes * 60_000L);
-        }
 
         rules.clear();
         rulesByMaterial.clear();
@@ -347,12 +312,10 @@ public final class SeasonalFloraController implements Listener, Runnable {
             World w = p.getWorld();
             if (w.getEnvironment() != World.Environment.NORMAL) continue;
 
-            int outer = Math.max(outerRadiusChunksCfg, 1);
-            if (allowInView) {
-                int view = Bukkit.getViewDistance();
-                // que outer nunca sea mayor al view distance (para que el chunk exista cargado)
-                outer = Math.min(outer, view);
-            }
+            int view = Bukkit.getViewDistance();
+
+// que outer nunca sea mayor al view distance (para que el chunk exista cargado)
+            int outer = Math.min(Math.max(outerRadiusChunksCfg, 1), view);
 
 // inner no puede pasar de outer-1
             int inner = Math.min(innerRadiusChunksCfg, Math.max(0, outer - 1));
@@ -383,8 +346,6 @@ public final class SeasonalFloraController implements Listener, Runnable {
                 }
             }
         }
-
-        autosaveMaybe();
     }
 
     private int processChunk(Chunk ch, Season season, int budget) {
@@ -400,11 +361,11 @@ public final class SeasonalFloraController implements Listener, Runnable {
         for (int i = 0; i < SAMPLES_PER_CHUNK && budget > 0; i++) {
             int x = bx + rnd.nextInt(16);
             int z = bz + rnd.nextInt(16);
-            int y = w.getHighestBlockYAt(x, z);
+            int surfaceY = getSurfaceY(w, x, z);
 
             // Si arriba hay nieve / hojas / etc, baja un poco para encontrar la flora real.
             // Esto evita que "la nieve tape" flores y nunca se purguen.
-            Block b = findPurgeCandidate(w, x, y, z);
+            Block b = findPurgeCandidate(w, x, surfaceY, z, surfaceScanDepth);
             if (b == null) continue;
 
             Material type = b.getType();
@@ -494,6 +455,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
         return budget;
     }
 
+
     /** Cuenta flora de la regla en chunk, parando cuando llega al cap. */
     private int countRuleBlocksInChunk(Chunk ch, List<Material> mats, int cap) {
         World w = ch.getWorld();
@@ -501,30 +463,22 @@ public final class SeasonalFloraController implements Listener, Runnable {
         int bz = ch.getZ() << 4;
 
         int count = 0;
-        int scan = Math.max(1, surfaceScanDepth);
-
         for (int dx = 0; dx < 16; dx++) {
             for (int dz = 0; dz < 16; dz++) {
                 int x = bx + dx;
                 int z = bz + dz;
 
-                int surfaceY = w.getHighestBlockYAt(x, z);
-                int maxY = Math.min(w.getMaxHeight() - 1, surfaceY + 2);
-                int minY = Math.max(w.getMinHeight(), surfaceY - scan);
-
-                for (int y = maxY; y >= minY; y--) {
-                    Material t = w.getBlockAt(x, y, z).getType();
-                    if (mats.contains(t)) {
-                        count++;
-                        if (count >= cap) return count;
-                        break; // solo 1 conteo por columna para ser barato
-                    }
-                    if (t == Material.SNOW || t == Material.SNOW_BLOCK) continue;
+                Block b = findRuleBlockInColumn(w, x, z, mats);
+                if (b == null) continue;              // ✅ no hay nada que contar
+                if (mats.contains(b.getType())) {
+                    count++;
+                    if (count >= cap) return count;
                 }
             }
         }
         return count;
     }
+
 
     /** Checa cerca para no apilar flores igualitas. */
     private boolean hasNearbyRuleBlock(Block center, List<Material> mats, int radius) {
@@ -627,24 +581,70 @@ public final class SeasonalFloraController implements Listener, Runnable {
      * Intenta encontrar el bloque real a evaluar para purge (por si arriba hay nieve / canopy).
      * Escanea hacia abajo unos pocos bloques: barato y suficiente.
      */
-    private Block findPurgeCandidate(World w, int x, int surfaceY, int z) {
-        // surfaceY viene de getHighestBlockYAt (normalmente el bloque sólido del suelo),
-        // pero la flora suele estar en surfaceY+1. Por eso escaneamos un rango vertical.
-        int maxY = Math.min(w.getMaxHeight() - 1, surfaceY + 2);
-        int minY = Math.max(w.getMinHeight(), surfaceY - Math.max(1, surfaceScanDepth));
+    private Block findPurgeCandidate(World w, int x, int surfaceY, int z, int depth) {
+        int minY = Math.max(w.getMinHeight(), surfaceY - depth);
+        int startY = Math.min(w.getMaxHeight() - 1, surfaceY + 2);
 
-        for (int y = maxY; y >= minY; y--) {
+        for (int y = startY; y >= minY; y--) {
             Block b = w.getBlockAt(x, y, z);
             Material t = b.getType();
 
-            // ignora nieve (para que no "tape" la detección de flora)
+            if (t == Material.AIR) continue;
+
+            // nieve encima no debe bloquear el purge
             if (t == Material.SNOW || t == Material.SNOW_BLOCK) continue;
 
+            // candidato real
             if (rulesByMaterial.containsKey(t)) return b;
-        }
 
+            // si ya llegamos a un bloque sólido “de suelo”, no tiene caso seguir mucho más abajo
+            if (t.isSolid()) {
+                // pero deja chance de que la flor esté justo encima del suelo:
+                Block up = b.getRelative(BlockFace.UP);
+                if (rulesByMaterial.containsKey(up.getType())) return up;
+                break;
+            }
+        }
         return null;
     }
+
+    /** Encuentra un bloque de la lista en la columna (soporta hojas arriba / flor en y+1). */
+    private Block findRuleBlockInColumn(World w, int x, int z, List<Material> mats) {
+        int surfaceY = getSurfaceYCompat(w, x, z);
+
+        int depth = Math.max(1, plugin.cfg.climate.getInt("seasonal_flora.surface_scan_depth", 8));
+        int minY = Math.max(w.getMinHeight(), surfaceY - depth);
+        int startY = Math.min(w.getMaxHeight() - 1, surfaceY + 2);
+
+        for (int y = startY; y >= minY; y--) {
+            Block b = w.getBlockAt(x, y, z);
+            Material t = b.getType();
+
+            if (t == Material.AIR) continue;
+            if (t == Material.SNOW || t == Material.SNOW_BLOCK) continue;
+
+            if (mats.contains(t)) return b;
+
+            if (t.isSolid()) {
+                // chance de que la flor esté justo encima del suelo
+                Block up = b.getRelative(BlockFace.UP);
+                if (mats.contains(up.getType())) return up;
+                break;
+            }
+        }
+        return null;
+    }
+
+    private int getSurfaceYCompat(World w, int x, int z) {
+        try {
+            // Paper: ignora leaves
+            return w.getHighestBlockYAt(x, z, org.bukkit.HeightMap.MOTION_BLOCKING_NO_LEAVES);
+        } catch (Throwable ignored) {
+            // Bukkit/compat
+            return w.getHighestBlockYAt(x, z);
+        }
+    }
+
 
     private boolean isProtectedByPlayer(Block b) {
         if (!protectPlayerPlaced) return false;
@@ -666,8 +666,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
     private void markPluginPlaced(Block b) {
         long ck = chunkKey(b.getWorld(), b.getX() >> 4, b.getZ() >> 4);
         long bk = blockKey(b.getWorld(), b.getX(), b.getY(), b.getZ());
-        boolean changed = pluginPlaced.computeIfAbsent(ck, k -> ConcurrentHashMap.newKeySet()).add(bk);
-        if (changed) placementsDirty = true;
+        pluginPlaced.computeIfAbsent(ck, k -> ConcurrentHashMap.newKeySet()).add(bk);
     }
 
     private void unmarkPluginPlaced(Block b) {
@@ -676,8 +675,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
 
         Set<Long> set = pluginPlaced.get(ck);
         if (set != null) {
-            boolean changed = set.remove(bk);
-            if (changed) placementsDirty = true;
+            set.remove(bk);
             if (set.isEmpty()) pluginPlaced.remove(ck);
         }
     }
@@ -721,8 +719,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
     private void markPlayerPlaced(Block b) {
         long ck = chunkKey(b.getWorld(), b.getX() >> 4, b.getZ() >> 4);
         long bk = blockKey(b.getWorld(), b.getX(), b.getY(), b.getZ());
-        boolean changed = playerPlaced.computeIfAbsent(ck, k -> ConcurrentHashMap.newKeySet()).add(bk);
-        if (changed) placementsDirty = true;
+        playerPlaced.computeIfAbsent(ck, k -> ConcurrentHashMap.newKeySet()).add(bk);
     }
 
     private void unmarkPlayerPlaced(Block b) {
@@ -731,8 +728,7 @@ public final class SeasonalFloraController implements Listener, Runnable {
 
         Set<Long> set = playerPlaced.get(ck);
         if (set != null) {
-            boolean changed = set.remove(bk);
-            if (changed) placementsDirty = true;
+            set.remove(bk);
             if (set.isEmpty()) playerPlaced.remove(ck);
         }
     }
@@ -754,123 +750,6 @@ public final class SeasonalFloraController implements Listener, Runnable {
 
     /* ============================= RULE ============================= */
 
-
-
-    // ---------------------------------------------------------------------
-    // Persistence (playerPlaced / pluginPlaced)
-    // ---------------------------------------------------------------------
-
-    private void autosaveMaybe() {
-        if (!persistPlacements) return;
-        if (!placementsDirty) return;
-        long now = System.currentTimeMillis();
-        if (now < nextAutosaveAtMs) return;
-        savePlacementsIfNeeded(false);
-        nextAutosaveAtMs = now + (persistAutosaveMinutes * 60_000L);
-    }
-
-    private void loadPlacementsIfNeeded() {
-        if (!persistPlacements) return;
-        if (placementsLoaded) return;
-        placementsLoaded = true;
-
-        try {
-            if (placementsFile == null) placementsFile = new File(plugin.getDataFolder(), "seasonal_flora_placements.yml");
-            if (!placementsFile.exists()) return;
-
-            YamlConfiguration yml = YamlConfiguration.loadConfiguration(placementsFile);
-
-            var psec = yml.getConfigurationSection("player");
-            if (psec != null) {
-                for (String ckStr : psec.getKeys(false)) {
-                    long ck;
-                    try { ck = Long.parseLong(ckStr); } catch (NumberFormatException ex) { continue; }
-
-                    List<String> list = psec.getStringList(ckStr);
-                    if (list == null || list.isEmpty()) continue;
-
-                    Set<Long> set = ConcurrentHashMap.newKeySet();
-                    for (String s : list) {
-                        try { set.add(Long.parseLong(s)); } catch (NumberFormatException ignored) {}
-                    }
-                    if (!set.isEmpty()) playerPlaced.put(ck, set);
-                }
-            }
-
-            var gsec = yml.getConfigurationSection("plugin");
-            if (gsec != null) {
-                for (String ckStr : gsec.getKeys(false)) {
-                    long ck;
-                    try { ck = Long.parseLong(ckStr); } catch (NumberFormatException ex) { continue; }
-
-                    List<String> list = gsec.getStringList(ckStr);
-                    if (list == null || list.isEmpty()) continue;
-
-                    Set<Long> set = ConcurrentHashMap.newKeySet();
-                    for (String s : list) {
-                        try { set.add(Long.parseLong(s)); } catch (NumberFormatException ignored) {}
-                    }
-                    if (!set.isEmpty()) pluginPlaced.put(ck, set);
-                }
-            }
-
-            placementsDirty = false;
-
-        } catch (Exception ex) {
-            plugin.getLogger().warning("[SeasonalFlora] Failed to load placements: " + ex.getMessage());
-        }
-    }
-
-    private void savePlacementsIfNeeded(boolean force) {
-        if (!persistPlacements) return;
-        if (!force && !placementsDirty) return;
-
-        try {
-            File dir = plugin.getDataFolder();
-            if (!dir.exists() && !dir.mkdirs()) {
-                plugin.getLogger().warning("[SeasonalFlora] Could not create plugin data folder to save placements.");
-                return;
-            }
-            if (placementsFile == null) placementsFile = new File(dir, "seasonal_flora_placements.yml");
-
-            // snapshot para que el I/O no pelee con escrituras concurrentes
-            Map<Long, Set<Long>> playerSnap = new HashMap<>();
-            for (var e : playerPlaced.entrySet()) {
-                if (e.getValue() == null || e.getValue().isEmpty()) continue;
-                playerSnap.put(e.getKey(), new HashSet<>(e.getValue()));
-            }
-
-            Map<Long, Set<Long>> pluginSnap = new HashMap<>();
-            for (var e : pluginPlaced.entrySet()) {
-                if (e.getValue() == null || e.getValue().isEmpty()) continue;
-                pluginSnap.put(e.getKey(), new HashSet<>(e.getValue()));
-            }
-
-            YamlConfiguration yml = new YamlConfiguration();
-            yml.set("version", 1);
-            yml.set("saved_at", System.currentTimeMillis());
-
-            var psec = yml.createSection("player");
-            for (var e : playerSnap.entrySet()) {
-                List<String> list = new ArrayList<>(e.getValue().size());
-                for (Long v : e.getValue()) list.add(Long.toString(v));
-                psec.set(Long.toString(e.getKey()), list);
-            }
-
-            var gsec = yml.createSection("plugin");
-            for (var e : pluginSnap.entrySet()) {
-                List<String> list = new ArrayList<>(e.getValue().size());
-                for (Long v : e.getValue()) list.add(Long.toString(v));
-                gsec.set(Long.toString(e.getKey()), list);
-            }
-
-            yml.save(placementsFile);
-            placementsDirty = false;
-
-        } catch (IOException ex) {
-            plugin.getLogger().warning("[SeasonalFlora] Failed to save placements: " + ex.getMessage());
-        }
-    }
     private static final class FloraRule {
         final String id;
         final boolean enabled;
@@ -1067,4 +946,35 @@ public final class SeasonalFloraController implements Listener, Runnable {
             return d;
         }
     }
+
+    // ===== HeightMap(MOTION_BLOCKING_NO_LEAVES) cache (Paper) =====
+    private static final Object HM_MOTION_NO_LEAVES;
+    private static final java.lang.reflect.Method M_GET_HIGHEST_Y_HM;
+
+    static {
+        Object hm = null;
+        java.lang.reflect.Method m = null;
+        try {
+            Class<?> heightMapClass = Class.forName("org.bukkit.HeightMap");
+            @SuppressWarnings("unchecked")
+            Class<? extends Enum> enumClass = (Class<? extends Enum>) heightMapClass;
+            hm = Enum.valueOf(enumClass, "MOTION_BLOCKING_NO_LEAVES");
+
+            m = World.class.getMethod("getHighestBlockYAt", int.class, int.class, heightMapClass);
+        } catch (Throwable ignored) {
+            // Spigot/Bukkit sin overload o sin HeightMap: fallback normal
+        }
+        HM_MOTION_NO_LEAVES = hm;
+        M_GET_HIGHEST_Y_HM = m;
+    }
+
+    private int getSurfaceY(World w, int x, int z) {
+        if (M_GET_HIGHEST_Y_HM != null && HM_MOTION_NO_LEAVES != null) {
+            try {
+                return (int) M_GET_HIGHEST_Y_HM.invoke(w, x, z, HM_MOTION_NO_LEAVES);
+            } catch (Throwable ignored) {}
+        }
+        return w.getHighestBlockYAt(x, z);
+    }
+
 }
