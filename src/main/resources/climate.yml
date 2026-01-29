@@ -1,141 +1,122 @@
-mode: "protocol"        # protocol | particles_only
-debounce_ms: 3000
-particles:
+mode: "protocol"                    # Modo: protocol | particles_only
+debounce_ms: 3000                   # Tiempo de espera / Debounce time
+particles:                          # Partículas por estación / Seasonal particles
   winter:  { enabled: false, density: 0.09, radius: 12 }
   autumn:  { enabled: false, density: 0.06, radius: 12 }
   spring:  { enabled: false, density: 0.04, radius: 10 }
   summer:  { enabled: false, density: 0.03, radius: 10 }
 
 seasonal_weather:
-  enabled: true
-  worlds:
-    - world
-
-  # Estos valores se piensan para una estación de 28 días / These values are for a 28-day season
-  # El código los va a escalar automáticamente / Code scales them automatically
-  rainy_days_per_season: 9   # fallback base
-
-  rainy_days:
-    SPRING: 12   # ~ 40-45% de los días / of the days
-    SUMMER: 5    # poco / a little
-    AUTUMN: 4    # muy poco / very little
-    WINTER: 8    # algo menos que primavera / slightly less than spring
-
-  thunder_chance: 0.20
+  enabled: true                     # Clima estacional / Seasonal weather
+  worlds: ["world"]                 # Mundos activos / Active worlds
+  rainy_days_per_season: 9          # Días lluvia base / Base rainy days
+  rainy_days:                       # Días lluvia/estación / Rain per season
+    SPRING: 12
+    SUMMER: 5
+    AUTUMN: 4
+    WINTER: 8
+  thunder_chance: 0.20              # Prob. tormenta / Thunder chance
   storm_duration_ticks:
     min: 6000
     max: 18000
   clear_duration_ticks:
     min: 6000
     max: 24000
-  reseed_each_season: true
-  respect_manual_commands: true
+  reseed_each_season: true          # Re-calcular cada estación / Reseed season
+  respect_manual_commands: true     # Respetar comandos / Respect commands
 
 real_snow:
-  enabled: true
-  worldguard_respect_regions: true
-  tick_period_ticks: 10
-  max_columns_per_tick: 24
-  radius_blocks: 32
-  freeze_water: true
-
+  enabled: true                     # Nieve real / Real snow
+  worldguard_respect_regions: true  # Respetar WG / Respect WorldGuard
+  tick_period_ticks: 10             # Periodo de ticks / Tick period
+  max_columns_per_tick: 24          # Columnas por tick / Columns per tick
+  radius_blocks: 32                 # Radio de nieve / Snow radius
+  freeze_water: true                # Congelar agua / Freeze water
   startup_melt:
-    enabled: true
-    chunks_per_tick: 1
-
+    enabled: true                   # Derretir al inicio / Startup melt
+    chunks_per_tick: 1              # Chunks por tick / Chunks per tick
   storm_boost:
-    enabled: true
-    budget_multiplier: 2.0
-    place_multiplier: 1.5
-    layer_multiplier: 1.5
-    radius_bonus_blocks: 8
-
+    enabled: true                   # Mejora en tormenta / Storm boost
+    budget_multiplier: 2.0          # Mult. presupuesto / Budget multiplier
+    place_multiplier: 1.5           # Mult. colocación / Place multiplier
+    layer_multiplier: 1.5           # Mult. capas / Layer multiplier
+    radius_bonus_blocks: 8          # Radio extra / Radius bonus
   melt:
-    enabled: true
-    tick_period_ticks: 0
-    budget_blocks_per_tick: 300
-    also_ice: true
-
+    enabled: true                   # Derretir nieve / Snow melt
+    tick_period_ticks: 0            # Periodo derretido / Melt tick period
+    budget_blocks_per_tick: 300     # Bloques por tick / Blocks per tick
+    also_ice: true                  # Derretir hielo / Also melt ice
   canopy:
-    enabled: true
-    attempts_per_tick: 10      # columnas a probar / columns to test
-    radius_blocks: 24          # radio alrededor del jugador / radius around player
-    max_leaf_scan_height: 6    # bloques encima buscar hojas / blocks above to scan leaves
-    only_in_cold_biomes: true  # sólo en biomas naturalmente nevados / only in naturally snowy biomes
+    enabled: true                   # Nieve en hojas / Canopy snow
+    attempts_per_tick: 10           # Intentos por tick / Attempts per tick
+    radius_blocks: 24               # Radio / Radius
+    max_leaf_scan_height: 6         # Altura escaneo / Scan height
+    only_in_cold_biomes: true       # Solo biomas fríos / Cold biomes only
 
 biome_spoof:
-  enabled: true
-  mode: "GLOBAL_RING"      # <-- no "GLOBAL"
-  radius_chunks: 8
-  budget_chunks_per_tick: 16
-  revert_on_non_winter: true
+  enabled: true                     # Simular bioma / Biome spoof
+  mode: "GLOBAL_RING"               # Modo de pintado / Spoof mode
+  radius_chunks: 12                 # Radio pintado / Radius chunks
+  budget_chunks_per_tick: 10        # Presupuesto/tick / Budget per tick
+  revert_on_non_winter: true        # Revertir si no es invierno / Revert
   spawn_guard:
-    enabled: true
-
-  # Biomas objetivo por estación / Target biomes per season
-  seasons:
-    SPRING: "JUNGLE"                # tonos verdes vivos / vivid green tones
-    SUMMER: "PLAINS"                # verde neutro / neutral green
-    AUTUMN: "WINDSWEPT_SAVANNA"     # pasto seco (look otoñal) / dry grass (autumn look)
-    WINTER: "SNOWY_PLAINS"          # frío + nieve vanilla / cold + vanilla snow
-
+    enabled: true                   # Protección spawn / Spawn guard
+  seasons:                          # Biomas según estación / Season biomes
+    SPRING: "JUNGLE"
+    SUMMER: "PLAINS"
+    AUTUMN: "SAVANNA_PLATEAU"
+    WINTER: "SNOWY_PLAINS"
   oceans:
-    enabled: true
+    enabled: true                   # Cambiar océanos / Spoof oceans
     seasons:
       SPRING: LUKEWARM_OCEAN
       SUMMER: WARM_OCEAN
       AUTUMN: OCEAN
       WINTER: FROZEN_OCEAN
-    affect_rivers: true
-    affect_shores: true
-    keep_deep_variants: true
-
+    affect_rivers: true             # Afectar ríos / Affect rivers
+    affect_shores: true             # Afectar costas / Affect shores
+    keep_deep_variants: true        # Mantener profundos / Keep deep variants
   rivers:
-    enabled: true           # NUEVO / NEW (si affect_rivers=true)
+    enabled: true                   # Cambiar ríos / Spoof rivers
     seasons:
       SPRING: RIVER
-      SUMMER: COLD_OCEAN
+      SUMMER: LUKEWARM_OCEAN
       AUTUMN: RIVER
       WINTER: FROZEN_RIVER
 
 autumn_soil:
-  enabled: true
-  attempts_per_tick: 4      # entre más alto, más rápido pinta / higher = faster painting
-  chance_per_column: 1.0    # pinta TODAS las columnas / paints ALL columns
-  radius_chunks: 4
-  leaf_chance_per_block: 1.0 # pinta TODAS las hojas / paints ALL leaves
+  enabled: true                     # Suelo otoñal / Autumn soil
+  attempts_per_tick: 4              # Intentos por tick / Attempts per tick
+  chance_per_column: 1.0            # Prob. por columna / Column chance
+  radius_chunks: 4                  # Radio chunks / Radius chunks
+  leaf_chance_per_block: 1.0        # Prob. en hojas / Leaf chance
 
 autumn_foliage:
-  enabled: true
-  radius_blocks: 160     # ~10 chunks
-  paint_budget_per_tick: 120
-  revert_budget_per_tick: 120
-  revert_on_non_autumn: true
+  enabled: true                     # Follaje otoñal / Autumn foliage
+  radius_blocks: 160                # Radio bloques / Radius blocks
+  paint_budget_per_tick: 120        # Presupuesto pintar / Paint budget
+  revert_budget_per_tick: 120       # Presupuesto revertir / Revert budget
+  revert_on_non_autumn: true        # Revertir si no es otoño / Revert
 
 migration:
-  enabled: true
-  tick_period: 200         # Cada cuánto se procesan migraciones / Migration processing interval
-  animals_per_tick: 40     # Máximo de animales revisados / Max animals checked
-  search_radius_blocks: 160 # Radio búsqueda biomas / Biome search radius
-  particles: true          # Partículas y sonidos / Particles and sounds
-
-  spawn:
-    # Probabilidad spawns extra / Extra spawn chance
+  enabled: true                     # Migración animal / Animal migration
+  tick_period: 200                  # Periodo (10s) / Tick period
+  animals_per_tick: 40              # Animales por tick / Animals per tick
+  search_radius_blocks: 160         # Radio búsqueda / Search radius
+  particles: true                   # Partículas / Particles
+  spawn:                            # Mejora de spawn / Spawn boost
     spring_boost_chance: 0.25
     summer_boost_chance: 0.25
     autumn_boost_chance: 0.20
     winter_boost_chance: 0.18
-
   soft_despawn:
-    # Probabilidad cancelar spawns clima cálido / Chance to cancel warm-weather spawns
-    warm_in_winter_chance: 0.25
-
+    warm_in_winter_chance: 0.25     # Despawn cálidos invierno / Warm in winter
   winter_cleanup:
-    enabled: true
-    days: 3                  # primeros N días de invierno / first N days of winter
-    base_radius_blocks: 64   # día 1 → 64 bloques / day 1
-    radius_step_blocks: 64   # día 2 → 128 / day 2
-    max_per_tick: 40         # cuántos animales limpia / how many animals it cleans
+    enabled: true                   # Limpieza invierno / Winter cleanup
+    days: 3                         # Días de limpieza / Cleanup days
+    base_radius_blocks: 64          # Radio base / Base radius
+    radius_step_blocks: 64          # Paso de radio / Radius step
+    max_per_tick: 40                # Máx por tick / Max per tick
 
 seasonal_flora:
   enabled: true
